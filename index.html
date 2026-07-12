@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Attendance & Expense Tracker</title>
+</head>
+<body style="margin:0;padding:20px;background:#F3F1EA;">
+<script>
+// Storage shim — talks to a Netlify Function backed by Netlify Blobs,
+// with the same get/set/list shape the tool originally used.
+const Storage = {
+  async get(key){
+    const res = await fetch('/api/data?key=' + encodeURIComponent(key));
+    if(!res.ok) throw new Error('get failed: ' + res.status);
+    const data = await res.json();
+    if(data.value === null || data.value === undefined) throw new Error('not found');
+    return { value: data.value };
+  },
+  async set(key, value){
+    const res = await fetch('/api/data', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ key, value })
+    });
+    if(!res.ok) throw new Error('set failed: ' + res.status);
+    return await res.json();
+  },
+  async list(prefix){
+    const res = await fetch('/api/data?prefix=' + encodeURIComponent(prefix));
+    if(!res.ok) throw new Error('list failed: ' + res.status);
+    return await res.json();
+  }
+};
+</script>
+
+<div id="app" style="max-width:760px;margin:0 auto;font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#232B3A;">
+
+  <div style="display:flex;gap:0;border-bottom:2px solid #24292E;margin-bottom:20px;">
+    <button id="tabDaily" class="tabbtn" style="flex:1;padding:12px;border:none;background:#24292E;color:#F8F5EE;font-weight:600;cursor:pointer;font-size:14px;">Today's entry</button>
+    <button id="tabMonth" class="tabbtn" style="flex:1;padding:12px;border:none;background:#EDE8DA;color:#24292E;font-weight:600;cursor:pointer;font-size:14px;">Monthly register</button>
+  </div>
+
+  <div id="msg" style="display:none;padding:8px 12px;background:#EAF3DE;border:1px solid #97C459;border-radius:4px;font-size:13px;margin-bottom:14px;"></div>
+
+  <!-- DAILY VIEW -->
+  <div id="dailyView">
+
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;">
+      <label style="font-size:13px;color:#5F5E5A;">Date</label>
+      <input type="date" id="dateInput" style="padding:6px 8px;border:1px solid #B4B2A9;border-radius:4px;font-size:14px;">
+      <span id="dayLabel" style="font-size:13px;color:#5F5E5A;"></span>
+    </div>
+
+    <div style="border:1.5px solid #85B7EB;background:#F5FAFF;border-radius:8px;padding:14px;margin-bottom:16px;">
+      <h3 style="margin:0 0 10px;font-size:14px;color:#0C447C;">Attendance</h3>
+      <div id="employeeGrid" style="display:flex;flex-direction:column;gap:8px;"></div>
+    </div>
+
+    <div style="border:1.5px solid #FAC775;background:#FFFAF0;border-radius:8px;padding:14px;margin-bottom:16px;">
+      <h3 style="margin:0 0 8px;font-size:14px;color:#854F0B;">Tea count</h3>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;">
+        <label style="font-size:13px;">Morning <input type="number" id="teaMorning" min="0" value="0" style="width:60px;padding:4px;border:1px solid #B4B2A9;border-radius:4px;"></label>
+        <label style="font-size:13px;">Evening <input type="number" id="teaEvening" min="0" value="0" style="width:60px;padding:4px;border:1px solid #B4B2A9;border-radius:4px;"></label>
+        <label style="font-size:13px;">Sir <input type="number" id="teaSir" min="0" value="0" style="width:60px;padding:4px;border:1px solid #B4B2A9;border-radius:4px;"></label>
+        <span style="font-size:13px;font-weight:600;">Total: <span id="teaTotal">0</span></span>
+      </div>
+    </div>
+
+    <div style="border:1.5px solid #AFA9EC;background:#F7F6FE;border-radius:8px;padding:14px;margin-bottom:16px;">
+      <h3 style="margin:0 0 8px;font-size:14px;color:#3C3489;">Expenses</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+        <input id="expDesc" placeholder="Description (e.g. Stationery)" style="flex:2;min-width:180px;padding:7px 10px;border:1px solid #B4B2A9;border-radius:4px;font-size:14px;">
+        <div style="flex:1;min-width:120px;position:relative;">
+          <span style="position:absolute;left:10px;top:8px;color:#5F5E5A;font-size:14px;">₹</span>
+          <input id="expAmount" type="number" min="0" step="0.01" placeholder="0.00" style="width:100%;padding:7px 10px 7px 22px;border:1px solid #B4B2A9;border-radius:4px;font-size:14px;box-sizing:border-box;">
+        </div>
+        <button onclick="addExpense()" style="padding:7px 16px;border:none;background:#24292E;color:#fff;border-radius:4px;cursor:pointer;">Add</button>
+      </div>
+      <div id="expList"></div>
+      <div style="text-align:right;font-size:14px;font-weight:600;margin-top:6px;">Total: <span id="expTotal">₹0.00</span></div>
+    </div>
+
+    <button onclick="saveDay()" style="width:100%;padding:12px;border:none;background:#24292E;color:#F8F5EE;border-radius:6px;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:16px;">Save today's entry</button>
+
+    <div id="editBanner" style="display:none;padding:8px 12px;background:#FAEEDA;border:1px solid #FAC775;border-radius:4px;font-size:13px;margin-bottom:14px;color:#633806;"></div>
+
+    <div style="border:1.5px solid #B4B2A9;background:#F8F7F4;border-radius:8px;padding:14px;margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+        <h3 style="margin:0;font-size:14px;color:#2C2C2A;">WhatsApp summary image</h3>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button onclick="copyImage()" style="padding:6px 14px;border:none;background:#24292E;color:#fff;border-radius:4px;cursor:pointer;font-size:13px;">Copy image</button>
+          <button onclick="downloadImage()" style="padding:6px 14px;border:1px solid #B4B2A9;background:#fff;border-radius:4px;cursor:pointer;font-size:13px;">Download</button>
+          <a id="shareWaLink" href="#" target="_blank" style="padding:6px 14px;border:none;background:#25D366;color:#fff;border-radius:4px;cursor:pointer;font-size:13px;text-decoration:none;display:inline-flex;align-items:center;">Share to WhatsApp</a>
+        </div>
+      </div>
+
+      <div id="waCardWrap" style="overflow:auto;border:1px solid #E5E1D6;border-radius:6px;padding:10px;background:#EDEDED;">
+        <div id="waCard" style="width:420px;background:#ffffff;border-radius:10px;padding:18px;font-family:-apple-system,Segoe UI,Roboto,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+          <div style="text-align:center;border-bottom:2px solid #24292E;padding-bottom:10px;margin-bottom:12px;">
+            <div id="waCardTitle" style="font-size:16px;font-weight:700;color:#24292E;">MUSTER CARD</div>
+            <div id="waCardDate" style="font-size:13px;color:#5F5E5A;margin-top:2px;"></div>
+          </div>
+
+          <table style="width:100%;border-collapse:collapse;margin-bottom:12px;">
+            <tr style="background:#24292E;color:#fff;">
+              <th style="padding:6px 8px;text-align:left;font-size:12px;">Employee</th>
+              <th style="padding:6px 8px;font-size:12px;">Status</th>
+            </tr>
+            <tbody id="waCardTable"></tbody>
+          </table>
+
+          <div style="background:#FAEEDA;border:1px solid #F3D9A6;border-radius:6px;padding:8px 10px;margin-bottom:8px;">
+            <div style="font-size:12px;font-weight:700;color:#633806;margin-bottom:4px;">TEA</div>
+            <div id="waCardTea" style="font-size:13px;color:#2C2C2A;"></div>
+          </div>
+
+          <div style="background:#F7F6FE;border:1px solid #D9D4F5;border-radius:6px;padding:8px 10px;">
+            <div style="font-size:12px;font-weight:700;color:#3C3489;margin-bottom:4px;">EXPENSES</div>
+            <div id="waCardExpenses" style="font-size:13px;color:#2C2C2A;"></div>
+          </div>
+        </div>
+      </div>
+
+      <details style="margin-top:10px;">
+        <summary style="cursor:pointer;font-size:12px;color:#5F5E5A;">Plain text version</summary>
+        <div style="display:flex;justify-content:flex-end;margin:8px 0;">
+          <button onclick="copyMsg()" style="padding:5px 12px;border:1px solid #B4B2A9;background:#fff;border-radius:4px;cursor:pointer;font-size:13px;">Copy text</button>
+        </div>
+        <textarea id="waMsg" readonly style="width:100%;min-height:200px;padding:10px;border:1px solid #D9D2C0;border-radius:4px;font-family:monospace;font-size:13px;box-sizing:border-box;"></textarea>
+      </details>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+  <!-- MONTHLY VIEW -->
+  <div id="monthView" style="display:none;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+      <label style="font-size:13px;color:#5F5E5A;">Month</label>
+      <input type="month" id="monthInput" style="padding:6px 8px;border:1px solid #B4B2A9;border-radius:4px;font-size:14px;">
+      <button onclick="loadMonth()" style="padding:6px 14px;border:none;background:#24292E;color:#fff;border-radius:4px;cursor:pointer;">Load</button>
+      <button onclick="changePassword()" style="margin-left:auto;padding:6px 12px;border:1px solid #B4B2A9;background:#fff;border-radius:4px;cursor:pointer;font-size:12px;color:#5F5E5A;">Set edit password</button>
+    </div>
+    <div id="monthSummary" style="margin-bottom:16px;"></div>
+    <h3 style="font-size:14px;margin:0 0 8px;">Attendance calendar</h3>
+    <div id="calendarTable" style="overflow-x:auto;margin-bottom:24px;"></div>
+    <h3 style="font-size:14px;margin:0 0 8px;">Tea calendar</h3>
+    <div id="teaCalendarTable" style="overflow-x:auto;margin-bottom:24px;"></div>
+    <h3 style="font-size:14px;margin:0 0 8px;">Expenses</h3>
+    <div id="expenseTable" style="overflow-x:auto;margin-bottom:24px;"></div>
+    <h3 style="font-size:14px;margin:0 0 8px;">Daily submissions</h3>
+    <div id="monthTable" style="overflow-x:auto;"></div>
+  </div>
+
+</div>
+
+<script>
+const EMPLOYEES = ["Sanjay","Dinesh","Prem","Vijay","Shravani","Kasturi","Soni","Sangita"];
+const STATUS_COLORS = {
+  present: {bg:'#639922', bgLight:'#EAF3DE', label:'Present'},
+  absent:  {bg:'#E24B4A', bgLight:'#FCEBEB', label:'Absent'},
+  late:    {bg:'#378ADD', bgLight:'#E6F1FB', label:'Late'},
+  half:    {bg:'#EF9F27', bgLight:'#FAEEDA', label:'Half day'}
+};
+const STATUS_CELL = {
+  present: {bg:'#EAF3DE', text:'#27500A', letter:'P'},
+  absent:  {bg:'#FCEBEB', text:'#791F1F', letter:'A'},
+  half:    {bg:'#FAEEDA', text:'#633806', letter:'H'},
+  late:    {bg:'#E6F1FB', text:'#0C447C', letter:'L'}
+};
+let state = {}; // { name: { status:'present', time:'' } }
+
+function resetState(){
+  state = {};
+  EMPLOYEES.forEach(n=> state[n] = {status:'present', time:''});
+}
+resetState();
+
+function todayStr(){ return new Date().toISOString().slice(0,10); }
+document.getElementById('dateInput').value = todayStr();
+
+function fmtDate(d){
+  const dt = new Date(d+'T00:00:00');
+  const dd = String(dt.getDate()).padStart(2,'0');
+  const mm = String(dt.getMonth()+1).padStart(2,'0');
+  const yy = String(dt.getFullYear()).slice(2);
+  const day = dt.toLocaleDateString('en-US',{weekday:'long'});
+  return {ddmmyy: dd+'/'+mm+'/'+yy, day};
+}
+function dmy(iso){
+  const [y,m,d] = iso.split('-');
+  return d+'/'+m+'/'+y.slice(2);
+}
+function monthName(d){
+  const dt = new Date(d+'T00:00:00');
+  return dt.toLocaleDateString('en-US',{month:'long',year:'numeric'});
+}
+
+function setStatus(name, status){
+  state[name].status = status;
+  if(status !== 'late') state[name].time = '';
+  renderGrid();
+  updateMsg();
+}
+function setTime(name, val){
+  state[name].time = val;
+  updateMsg();
+}
+
+const TIME_OPTIONS = (()=>{
+  const opts = [];
+  for(let h=7; h<=18; h++){
+    for(let m=0; m<60; m+=15){
+      opts.push(String(h).padStart(2,'0')+':'+String(m).padStart(2,'0'));
+    }
+  }
+  return opts;
+})();
+
+function renderGrid(){
+  const grid = document.getElementById('employeeGrid');
+  grid.innerHTML = EMPLOYEES.map(name=>{
+    const st = state[name];
+    const btns = ['present','absent','late','half'].map(key=>{
+      const c = STATUS_COLORS[key];
+      const active = st.status === key;
+      return `<button onclick="setStatus('${name}','${key}')" style="padding:6px 12px;border:1px solid ${active?c.bg:'#D9D2C0'};background:${active?c.bg:'#fff'};color:${active?'#fff':'#5F5E5A'};border-radius:4px;cursor:pointer;font-size:12px;font-weight:${active?'600':'400'};">${c.label}</button>`;
+    }).join('');
+    const timeBox = st.status==='late'
+      ? `<select onchange="setTime('${name}', this.value)" style="padding:5px 8px;border:1px solid #378ADD;border-radius:4px;font-size:12px;margin-left:6px;">
+          <option value="">Select time</option>
+          ${TIME_OPTIONS.map(t=>`<option value="${t}" ${st.time===t?'selected':''}>${t}</option>`).join('')}
+        </select>`
+      : '';
+    const rowBg = STATUS_COLORS[st.status].bgLight;
+    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:${rowBg};border-radius:6px;">
+      <span style="min-width:90px;font-weight:600;font-size:14px;">${name}</span>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">${btns}</div>
+      ${timeBox}
+    </div>`;
+  }).join('');
+}
+
+function updateMsg(){
+  const d = document.getElementById('dateInput').value;
+  const {ddmmyy, day} = fmtDate(d);
+  const mName = monthName(d);
+  const m = +document.getElementById('teaMorning').value || 0;
+  const e = +document.getElementById('teaEvening').value || 0;
+  const s = +document.getElementById('teaSir').value || 0;
+  const total = m+e+s;
+  document.getElementById('teaTotal').textContent = total;
+
+  const absentList = EMPLOYEES.filter(n=>state[n].status==='absent');
+  const lateList = EMPLOYEES.filter(n=>state[n].status==='late');
+  const halfList = EMPLOYEES.filter(n=>state[n].status==='half');
+  const expenseTotal = expenses.reduce((a,ex)=>a+ex.amount,0);
+
+  let msg = `*MUSTER CARD FOR ${mName.toUpperCase()}*\n`;
+  msg += `*DATE : ${ddmmyy} (${day})\n`;
+  msg += `*ABSENT PEOPLE LIST\n`;
+  msg += (absentList.length ? absentList.map((n,i)=>`${i+1}. ${n}`).join('\n') : 'None') + '\n';
+  msg += `*PEOPLE COMING* AFTER 10 AM\n`;
+  msg += (lateList.length ? lateList.map((n,i)=>`${i+1}. ${n} (${state[n].time||'-'})`).join('\n') : 'None') + '\n';
+  msg += `**HALF DAY\n`;
+  msg += (halfList.length ? halfList.join('\n') : 'None') + '\n\n';
+  msg += `***TEA***\n`;
+  msg += `Morning :- ${m}\n`;
+  msg += `Evening :- ${e}\n`;
+  msg += `Sir : - ${s}\n`;
+  msg += `Total : - ${total}\n\n`;
+  msg += `***EXPENSES***\n`;
+  msg += (expenses.length ? expenses.map(ex=>`${ex.desc} - ${inr(ex.amount)}`).join('\n') : 'None') + '\n';
+  msg += `Total : - ${inr(expenseTotal)}`;
+
+  document.getElementById('waMsg').value = msg;
+
+  // Visual card — status table
+  document.getElementById('waCardTitle').textContent = 'MUSTER CARD — ' + mName.toUpperCase();
+  document.getElementById('waCardDate').textContent = ddmmyy + ' (' + day + ')';
+  document.getElementById('waCardTable').innerHTML = EMPLOYEES.map(n=>{
+    const st = state[n];
+    const c = STATUS_CELL[st.status];
+    const timeLine = st.status==='late' ? `<div style="font-size:10px;">${st.time||''}</div>` : '';
+    return `<tr style="border-bottom:1px solid #EDE8DA;">
+      <td style="padding:6px 8px;font-size:13px;">${n}</td>
+      <td style="padding:4px 8px;text-align:center;background:${c.bg};color:${c.text};font-weight:700;font-size:13px;">${c.letter}${timeLine}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('waCardTea').innerHTML =
+    `Morning: ${m} &nbsp;•&nbsp; Evening: ${e} &nbsp;•&nbsp; Sir: ${s} &nbsp;•&nbsp; <b>Total: ${total}</b>`;
+
+  document.getElementById('waCardExpenses').innerHTML = expenses.length
+    ? expenses.map(ex=>`${ex.desc} — <b>${inr(ex.amount)}</b>`).join('<br>') + `<div style="margin-top:4px;font-weight:700;">Total: ${inr(expenseTotal)}</div>`
+    : 'None';
+
+  // WhatsApp share link (plain text version, since WhatsApp links can't attach images directly)
+  document.getElementById('shareWaLink').href = 'https://wa.me/?text=' + encodeURIComponent(msg);
+}
+
+async function renderCardToBlob(){
+  const card = document.getElementById('waCard');
+  const canvas = await html2canvas(card, {backgroundColor:'#ffffff', scale:2});
+  return new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+}
+
+async function copyImage(){
+  try{
+    const blob = await renderCardToBlob();
+    await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
+    showMsg('Image copied — paste it into WhatsApp');
+  }catch(e){
+    showMsg('Could not copy image directly — use Download instead', 4000);
+  }
+}
+
+async function downloadImage(){
+  try{
+    const blob = await renderCardToBlob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'muster-card-' + document.getElementById('dateInput').value + '.png';
+    a.click();
+    URL.revokeObjectURL(url);
+  }catch(e){
+    showMsg('Could not generate image: ' + (e && e.message ? e.message : String(e)), 5000);
+  }
+}
+
+['teaMorning','teaEvening','teaSir'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', updateMsg);
+});
+document.getElementById('dateInput').addEventListener('change', loadDay);
+
+async function loadDay(){
+  document.getElementById('editBanner').style.display = 'none';
+  const d = document.getElementById('dateInput').value;
+  document.getElementById('dayLabel').textContent = fmtDate(d).day;
+  try{
+    const r = await Storage.get('attendance:'+d);
+    const data = JSON.parse(r.value);
+    resetState();
+    Object.keys(data.state||{}).forEach(n=>{ if(state[n]) state[n]=data.state[n]; });
+    document.getElementById('teaMorning').value = data.tea?.morning||0;
+    document.getElementById('teaEvening').value = data.tea?.evening||0;
+    document.getElementById('teaSir').value = data.tea?.sir||0;
+    expenses = data.expenses || [];
+  }catch(e){
+    resetState();
+    document.getElementById('teaMorning').value=0;
+    document.getElementById('teaEvening').value=0;
+    document.getElementById('teaSir').value=0;
+    expenses = [];
+  }
+  renderGrid();
+  renderExpenses();
+  updateMsg();
+}
+
+async function saveDay(){
+  const d = document.getElementById('dateInput').value;
+  const data = {
+    state,
+    tea:{
+      morning: +document.getElementById('teaMorning').value||0,
+      evening: +document.getElementById('teaEvening').value||0,
+      sir: +document.getElementById('teaSir').value||0
+    },
+    expenses,
+    submittedAt: new Date().toISOString()
+  };
+  try{
+    await Storage.set('attendance:'+d, JSON.stringify(data));
+    const t = new Date(data.submittedAt).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+    showMsg('Saved — submitted at '+t);
+  }catch(e){
+    showMsg('Could not save: ' + (e && e.message ? e.message : String(e)), 6000);
+  }
+}
+
+function showMsg(t, duration){
+  const el = document.getElementById('msg');
+  el.textContent = t; el.style.display='block';
+  setTimeout(()=>el.style.display='none', duration || 2500);
+}
+
+function copyMsg(){
+  const ta = document.getElementById('waMsg');
+  ta.select();
+  document.execCommand('copy');
+  showMsg('Message copied');
+}
+
+const TABS = ['tabDaily','tabMonth'];
+const VIEWS = {tabDaily:'dailyView', tabMonth:'monthView'};
+function activateTab(id){
+  TABS.forEach(t=>{
+    document.getElementById(VIEWS[t]).style.display = (t===id)?'block':'none';
+    document.getElementById(t).style.background = (t===id)?'#24292E':'#EDE8DA';
+    document.getElementById(t).style.color = (t===id)?'#F8F5EE':'#24292E';
+  });
+}
+document.getElementById('tabDaily').onclick = ()=> activateTab('tabDaily');
+document.getElementById('tabMonth').onclick = ()=>{
+  activateTab('tabMonth');
+  if(!document.getElementById('monthInput').value){
+    document.getElementById('monthInput').value = todayStr().slice(0,7);
+    loadMonth();
+  }
+};
+
+// EDIT PASSWORD PROTECTION
+async function getPassword(){
+  try{
+    const r = await Storage.get('settings:editPassword');
+    return r.value;
+  }catch(e){
+    return null;
+  }
+}
+async function changePassword(){
+  const current = await getPassword();
+  if(current){
+    const check = prompt('Enter current password to change it:');
+    if(check !== current){ alert('Incorrect password.'); return; }
+  }
+  const next = prompt('Set a new edit password:');
+  if(!next) return;
+  await Storage.set('settings:editPassword', next);
+  alert('Edit password updated.');
+}
+async function editDay(date){
+  const pass = await getPassword();
+  if(pass){
+    const entered = prompt('Enter password to edit '+dmy(date)+':');
+    if(entered !== pass){ alert('Incorrect password.'); return; }
+  }
+  activateTab('tabDaily');
+  document.getElementById('dateInput').value = date;
+  await loadDay();
+  const banner = document.getElementById('editBanner');
+  banner.style.display = 'block';
+  banner.textContent = 'Editing a previously submitted entry for '+dmy(date)+'. Save to update it.';
+}
+let expenses = [];
+function inr(n){
+  return '₹' + (Number(n)||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function renderExpenses(){
+  const total = expenses.reduce((a,e)=>a+e.amount,0);
+  document.getElementById('expTotal').textContent = inr(total);
+  document.getElementById('expList').innerHTML = expenses.length ? expenses.map((e,i)=>
+    `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:1px solid #EDE8DA;font-size:14px;">
+      <span>${e.desc}</span>
+      <span style="display:flex;align-items:center;gap:10px;"><b>${inr(e.amount)}</b> <span onclick="expenses.splice(${i},1);renderExpenses();" style="cursor:pointer;color:#E24B4A;font-weight:700;">×</span></span>
+    </div>`
+  ).join('') : '<p style="color:#888780;font-size:13px;">No expenses added yet.</p>';
+}
+function addExpense(){
+  const desc = document.getElementById('expDesc').value.trim();
+  const amt = +document.getElementById('expAmount').value;
+  if(desc && amt>0){
+    expenses.push({desc, amount:amt});
+    document.getElementById('expDesc').value='';
+    document.getElementById('expAmount').value='';
+    renderExpenses();
+  }
+}
+
+async function loadMonth(){
+  const ym = document.getElementById('monthInput').value;
+  if(!ym) return;
+  document.getElementById('monthSummary').innerHTML = 'Loading...';
+  document.getElementById('monthTable').innerHTML = '';
+  let keys = [];
+  try{
+    const r = await Storage.list('attendance:'+ym);
+    keys = r.keys || [];
+  }catch(e){}
+
+  if(keys.length===0){
+    document.getElementById('monthSummary').innerHTML = '<p style="color:#888780;font-size:13px;">No entries saved for this month yet.</p>';
+    return;
+  }
+
+  const rows = [];
+  let teaTotalMonth = 0;
+  let expenseTotalMonth = 0;
+  const expenseRows = [];
+
+  for(const k of keys.sort()){
+    try{
+      const r = await Storage.get(k);
+      const data = JSON.parse(r.value);
+      const date = k.split(':')[1];
+      const m = data.tea?.morning||0, e2 = data.tea?.evening||0, s2 = data.tea?.sir||0;
+      const t = m+e2+s2;
+      teaTotalMonth += t;
+      const expSum = (data.expenses||[]).reduce((a,e)=>a+e.amount,0);
+      expenseTotalMonth += expSum;
+      (data.expenses||[]).forEach(exp=> expenseRows.push({date, desc:exp.desc, amount:exp.amount}));
+
+      let absentN=0, lateN=0, halfN=0;
+      const statusByEmployee = {};
+      EMPLOYEES.forEach(n=>{
+        const st = data.state?.[n]?.status || 'present';
+        const tm = data.state?.[n]?.time || '';
+        statusByEmployee[n] = {status: st, time: tm};
+        if(st==='absent'){ absentN++; }
+        if(st==='late'){ lateN++; }
+        if(st==='half'){ halfN++; }
+      });
+
+      const submittedTime = data.submittedAt ? new Date(data.submittedAt).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}) : '—';
+      rows.push({date, absentN, lateN, halfN, tea:t, teaMorning:m, teaEvening:e2, teaSir:s2, submittedTime, expense: expSum, statusByEmployee});
+    }catch(e){}
+  }
+
+  document.getElementById('monthSummary').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;">
+      <div style="background:#F1EFE8;border-radius:6px;padding:10px;text-align:center;"><div style="font-size:12px;color:#5F5E5A;">Days logged</div><div style="font-size:20px;font-weight:600;">${rows.length}</div></div>
+      <div style="background:#F1EFE8;border-radius:6px;padding:10px;text-align:center;"><div style="font-size:12px;color:#5F5E5A;">Tea (month)</div><div style="font-size:20px;font-weight:600;">${teaTotalMonth}</div></div>
+      <div style="background:#F1EFE8;border-radius:6px;padding:10px;text-align:center;"><div style="font-size:12px;color:#5F5E5A;">Expenses (month)</div><div style="font-size:20px;font-weight:600;">${inr(expenseTotalMonth)}</div></div>
+      <div style="background:#F1EFE8;border-radius:6px;padding:10px;text-align:center;"><div style="font-size:12px;color:#5F5E5A;">Employees tracked</div><div style="font-size:20px;font-weight:600;">${EMPLOYEES.length}</div></div>
+    </div>
+  `;
+
+  document.getElementById('calendarTable').innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;">
+      <tr style="background:#24292E;color:#F8F5EE;">
+        <th style="padding:6px;text-align:left;min-width:110px;">Date</th>
+        ${EMPLOYEES.map(n=>`<th style="padding:6px;min-width:60px;">${n}</th>`).join('')}
+      </tr>
+      ${rows.map(r=>{
+        const dt = new Date(r.date+'T00:00:00');
+        const dayShort = dt.toLocaleDateString('en-US',{weekday:'short'});
+        return `<tr style="border-bottom:1px solid #EDE8DA;">
+          <td style="padding:6px;font-weight:600;">${dayShort} ${dmy(r.date)}</td>
+          ${EMPLOYEES.map(n=>{
+            const st = r.statusByEmployee[n];
+            const c = STATUS_CELL[st.status];
+            const timeLine = st.status==='late' ? `<div style="font-size:10px;">${st.time||''}</div>` : '';
+            return `<td style="padding:4px;text-align:center;background:${c.bg};color:${c.text};font-weight:700;border-left:1px solid #fff;">${c.letter}${timeLine}</td>`;
+          }).join('')}
+        </tr>`;
+      }).join('')}
+    </table>
+  `;
+
+  document.getElementById('teaCalendarTable').innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <tr style="background:#24292E;color:#F8F5EE;">
+        <th style="padding:6px;text-align:left;">Date</th><th style="padding:6px;">Morning</th><th style="padding:6px;">Evening</th><th style="padding:6px;">Sir</th><th style="padding:6px;">Total</th>
+      </tr>
+      ${rows.map(r=>{
+        const dt = new Date(r.date+'T00:00:00');
+        const dayShort = dt.toLocaleDateString('en-US',{weekday:'short'});
+        return `<tr style="border-bottom:1px solid #F3E6C8;background:#FFFAF0;">
+          <td style="padding:6px;font-weight:600;color:#633806;">${dayShort} ${dmy(r.date)}</td>
+          <td style="padding:6px;text-align:center;">${r.teaMorning}</td>
+          <td style="padding:6px;text-align:center;">${r.teaEvening}</td>
+          <td style="padding:6px;text-align:center;">${r.teaSir}</td>
+          <td style="padding:6px;text-align:center;font-weight:700;color:#854F0B;">${r.tea}</td>
+        </tr>`;
+      }).join('')}
+    </table>
+  `;
+
+  document.getElementById('expenseTable').innerHTML = expenseRows.length ? `
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <tr style="background:#24292E;color:#F8F5EE;">
+        <th style="padding:6px;text-align:left;">Date</th><th style="padding:6px;text-align:left;">Description</th><th style="padding:6px;text-align:right;">Amount</th>
+      </tr>
+      ${expenseRows.map(e=>`<tr style="border-bottom:1px solid #E5E1F5;background:#F7F6FE;">
+        <td style="padding:6px;">${dmy(e.date)}</td>
+        <td style="padding:6px;">${e.desc}</td>
+        <td style="padding:6px;text-align:right;">${inr(e.amount)}</td>
+      </tr>`).join('')}
+      <tr style="background:#EDEBFB;font-weight:700;">
+        <td style="padding:6px;" colspan="2">Total</td>
+        <td style="padding:6px;text-align:right;">${inr(expenseTotalMonth)}</td>
+      </tr>
+    </table>
+  ` : '<p style="color:#888780;font-size:13px;">No expenses logged this month.</p>';
+
+  document.getElementById('monthTable').innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <tr style="background:#24292E;color:#F8F5EE;"><th style="padding:6px;text-align:left;">Date</th><th style="padding:6px;">Absent</th><th style="padding:6px;">Late</th><th style="padding:6px;">Half day</th><th style="padding:6px;">Tea</th><th style="padding:6px;">Expenses</th><th style="padding:6px;">Submitted at</th><th style="padding:6px;">Edit</th></tr>
+      ${rows.map(r=>`<tr style="border-bottom:1px solid #D9D2C0;"><td style="padding:6px;">${dmy(r.date)}</td><td style="padding:6px;text-align:center;">${r.absentN}</td><td style="padding:6px;text-align:center;">${r.lateN}</td><td style="padding:6px;text-align:center;">${r.halfN}</td><td style="padding:6px;text-align:center;">${r.tea}</td><td style="padding:6px;text-align:center;">${inr(r.expense)}</td><td style="padding:6px;text-align:center;">${r.submittedTime}</td><td style="padding:6px;text-align:center;"><button onclick="editDay('${r.date}')" style="padding:4px 10px;border:1px solid #B4B2A9;background:#fff;border-radius:4px;cursor:pointer;font-size:12px;">Edit</button></td></tr>`).join('')}
+    </table>
+  `;
+}
+
+renderGrid();
+loadDay();
+</script>
+
+</body>
+</html>

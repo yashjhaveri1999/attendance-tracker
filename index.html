@@ -81,6 +81,17 @@ const Storage = {
       <div style="text-align:right;font-size:14px;font-weight:600;margin-top:6px;">Total: <span id="expTotal">₹0.00</span></div>
     </div>
 
+    <div style="border:1.5px solid #6FC2BE;background:#EFFAF9;border-radius:8px;padding:14px;margin-bottom:16px;">
+      <h3 style="margin:0 0 8px;font-size:14px;color:#0F5F5A;">Courier Deliveries</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+        <input id="courSender" placeholder="Sender Name" style="flex:2;min-width:140px;padding:7px 10px;border:1px solid #B4B2A9;border-radius:4px;font-size:14px;">
+        <input id="courBoxes" type="number" min="0" placeholder="Boxes/ Bags" style="flex:1;min-width:100px;padding:7px 10px;border:1px solid #B4B2A9;border-radius:4px;font-size:14px;">
+        <input id="courCompany" placeholder="Courier Company" style="flex:1;min-width:140px;padding:7px 10px;border:1px solid #B4B2A9;border-radius:4px;font-size:14px;">
+        <button onclick="addCourier()" style="padding:7px 16px;border:none;background:#24292E;color:#fff;border-radius:4px;cursor:pointer;">Add</button>
+      </div>
+      <div id="courList"></div>
+    </div>
+
     <button onclick="saveDay()" style="width:100%;padding:12px;border:none;background:#24292E;color:#F8F5EE;border-radius:6px;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:16px;">Save today's entry</button>
 
     <div id="editBanner" style="display:none;padding:8px 12px;background:#FAEEDA;border:1px solid #FAC775;border-radius:4px;font-size:13px;margin-bottom:14px;color:#633806;"></div>
@@ -115,9 +126,14 @@ const Storage = {
             <div id="waCardTea" style="font-size:13px;color:#2C2C2A;"></div>
           </div>
 
-          <div style="background:#F7F6FE;border:1px solid #D9D4F5;border-radius:6px;padding:8px 10px;">
+          <div style="background:#F7F6FE;border:1px solid #D9D4F5;border-radius:6px;padding:8px 10px;margin-bottom:8px;">
             <div style="font-size:12px;font-weight:700;color:#3C3489;margin-bottom:4px;">EXPENSES</div>
             <div id="waCardExpenses" style="font-size:13px;color:#2C2C2A;"></div>
+          </div>
+
+          <div style="background:#EFFAF9;border:1px solid #BFE5E2;border-radius:6px;padding:8px 10px;">
+            <div style="font-size:12px;font-weight:700;color:#0F5F5A;margin-bottom:4px;">COURIER DELIVERIES</div>
+            <div id="waCardCouriers" style="font-size:13px;color:#2C2C2A;"></div>
           </div>
         </div>
       </div>
@@ -149,6 +165,8 @@ const Storage = {
     <div id="teaCalendarTable" style="overflow-x:auto;margin-bottom:24px;"></div>
     <h3 style="font-size:14px;margin:0 0 8px;">Expenses</h3>
     <div id="expenseTable" style="overflow-x:auto;margin-bottom:24px;"></div>
+    <h3 style="font-size:14px;margin:0 0 8px;">Courier Deliveries</h3>
+    <div id="courierTable" style="overflow-x:auto;margin-bottom:24px;"></div>
     <h3 style="font-size:14px;margin:0 0 8px;">Daily submissions</h3>
     <div id="monthTable" style="overflow-x:auto;"></div>
   </div>
@@ -272,7 +290,9 @@ function updateMsg(){
   msg += `Total : - ${total}\n\n`;
   msg += `***EXPENSES***\n`;
   msg += (expenses.length ? expenses.map(ex=>`${ex.desc} - ${inr(ex.amount)}`).join('\n') : 'None') + '\n';
-  msg += `Total : - ${inr(expenseTotal)}`;
+  msg += `Total : - ${inr(expenseTotal)}\n\n`;
+  msg += `***COURIER DELIVERIES***\n`;
+  msg += (couriers.length ? couriers.map(c=>`${c.sender} - ${c.boxes} box(es)/bag(s) - ${c.company}`).join('\n') : 'None');
 
   document.getElementById('waMsg').value = msg;
 
@@ -294,6 +314,10 @@ function updateMsg(){
 
   document.getElementById('waCardExpenses').innerHTML = expenses.length
     ? expenses.map(ex=>`${ex.desc} — <b>${inr(ex.amount)}</b>`).join('<br>') + `<div style="margin-top:4px;font-weight:700;">Total: ${inr(expenseTotal)}</div>`
+    : 'None';
+
+  document.getElementById('waCardCouriers').innerHTML = couriers.length
+    ? couriers.map(c=>`${c.sender} — ${c.boxes} box(es)/bag(s) — ${c.company}`).join('<br>')
     : 'None';
 
   // WhatsApp share link (plain text version, since WhatsApp links can't attach images directly)
@@ -348,15 +372,18 @@ async function loadDay(){
     document.getElementById('teaEvening').value = data.tea?.evening||0;
     document.getElementById('teaSir').value = data.tea?.sir||0;
     expenses = data.expenses || [];
+    couriers = data.couriers || [];
   }catch(e){
     resetState();
     document.getElementById('teaMorning').value=0;
     document.getElementById('teaEvening').value=0;
     document.getElementById('teaSir').value=0;
     expenses = [];
+    couriers = [];
   }
   renderGrid();
   renderExpenses();
+  renderCouriers();
   updateMsg();
 }
 
@@ -370,6 +397,7 @@ async function saveDay(){
       sir: +document.getElementById('teaSir').value||0
     },
     expenses,
+    couriers,
     submittedAt: new Date().toISOString()
   };
   try{
@@ -470,6 +498,28 @@ function addExpense(){
   }
 }
 
+let couriers = [];
+function renderCouriers(){
+  document.getElementById('courList').innerHTML = couriers.length ? couriers.map((c,i)=>
+    `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:1px solid #DCEFEE;font-size:14px;">
+      <span>${c.sender} <span style="color:#5F5E5A;">— ${c.boxes} box(es)/bag(s), ${c.company}</span></span>
+      <span onclick="couriers.splice(${i},1);renderCouriers();" style="cursor:pointer;color:#E24B4A;font-weight:700;">×</span>
+    </div>`
+  ).join('') : '<p style="color:#888780;font-size:13px;">No courier deliveries logged yet.</p>';
+}
+function addCourier(){
+  const sender = document.getElementById('courSender').value.trim();
+  const boxes = +document.getElementById('courBoxes').value;
+  const company = document.getElementById('courCompany').value.trim();
+  if(sender && boxes>0 && company){
+    couriers.push({sender, boxes, company});
+    document.getElementById('courSender').value='';
+    document.getElementById('courBoxes').value='';
+    document.getElementById('courCompany').value='';
+    renderCouriers();
+  }
+}
+
 async function loadMonth(){
   const ym = document.getElementById('monthInput').value;
   if(!ym) return;
@@ -490,6 +540,7 @@ async function loadMonth(){
   let teaTotalMonth = 0;
   let expenseTotalMonth = 0;
   const expenseRows = [];
+  const courierRows = [];
 
   for(const k of keys.sort()){
     try{
@@ -502,6 +553,7 @@ async function loadMonth(){
       const expSum = (data.expenses||[]).reduce((a,e)=>a+e.amount,0);
       expenseTotalMonth += expSum;
       (data.expenses||[]).forEach(exp=> expenseRows.push({date, desc:exp.desc, amount:exp.amount}));
+      (data.couriers||[]).forEach(c=> courierRows.push({date, sender:c.sender, boxes:c.boxes, company:c.company}));
 
       let absentN=0, lateN=0, halfN=0;
       const statusByEmployee = {};
@@ -585,6 +637,20 @@ async function loadMonth(){
       </tr>
     </table>
   ` : '<p style="color:#888780;font-size:13px;">No expenses logged this month.</p>';
+
+  document.getElementById('courierTable').innerHTML = courierRows.length ? `
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <tr style="background:#24292E;color:#F8F5EE;">
+        <th style="padding:6px;text-align:left;">Date</th><th style="padding:6px;text-align:left;">Sender Name</th><th style="padding:6px;">Boxes/ Bags</th><th style="padding:6px;text-align:left;">Courier Company</th>
+      </tr>
+      ${courierRows.map(c=>`<tr style="border-bottom:1px solid #D5EFED;background:#EFFAF9;">
+        <td style="padding:6px;">${dmy(c.date)}</td>
+        <td style="padding:6px;">${c.sender}</td>
+        <td style="padding:6px;text-align:center;">${c.boxes}</td>
+        <td style="padding:6px;">${c.company}</td>
+      </tr>`).join('')}
+    </table>
+  ` : '<p style="color:#888780;font-size:13px;">No courier deliveries logged this month.</p>';
 
   document.getElementById('monthTable').innerHTML = `
     <table style="width:100%;border-collapse:collapse;font-size:13px;">

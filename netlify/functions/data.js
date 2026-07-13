@@ -1,38 +1,36 @@
-import { getStore } from "@netlify/blobs";
+const { getStore } = require("@netlify/blobs");
 
-export default async (req) => {
+exports.handler = async (event) => {
   const store = getStore("attendance");
-  const url = new URL(req.url);
+  const params = event.queryStringParameters || {};
 
   try {
-    if (req.method === "GET") {
-      const key = url.searchParams.get("key");
-      const prefix = url.searchParams.get("prefix");
+    if (event.httpMethod === "GET") {
+      const key = params.key;
+      const prefix = params.prefix;
 
       if (key) {
         const value = await store.get(key);
-        return Response.json({ value });
+        return { statusCode: 200, body: JSON.stringify({ value }) };
       }
-      if (prefix !== null) {
+      if (prefix !== undefined) {
         const { blobs } = await store.list({ prefix });
-        return Response.json({ keys: blobs.map((b) => b.key) });
+        return { statusCode: 200, body: JSON.stringify({ keys: blobs.map((b) => b.key) }) };
       }
-      return Response.json({ error: "key or prefix required" }, { status: 400 });
+      return { statusCode: 400, body: JSON.stringify({ error: "key or prefix required" }) };
     }
 
-    if (req.method === "POST") {
-      const body = await req.json();
-      if (!body || !body.key) {
-        return Response.json({ error: "key required" }, { status: 400 });
+    if (event.httpMethod === "POST") {
+      const body = JSON.parse(event.body || "{}");
+      if (!body.key) {
+        return { statusCode: 400, body: JSON.stringify({ error: "key required" }) };
       }
       await store.set(body.key, body.value);
-      return Response.json({ ok: true });
+      return { statusCode: 200, body: JSON.stringify({ ok: true }) };
     }
 
-    return new Response("Method not allowed", { status: 405 });
+    return { statusCode: 405, body: "Method not allowed" };
   } catch (err) {
-    return Response.json({ error: err.message }, { status: 500 });
+    return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
   }
 };
-
-export const config = { path: "/api/data" };

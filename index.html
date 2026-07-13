@@ -483,7 +483,7 @@ function renderExpenses(){
   document.getElementById('expList').innerHTML = expenses.length ? expenses.map((e,i)=>
     `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:1px solid #EDE8DA;font-size:14px;">
       <span>${e.desc}</span>
-      <span style="display:flex;align-items:center;gap:10px;"><b>${inr(e.amount)}</b> <span onclick="expenses.splice(${i},1);renderExpenses();" style="cursor:pointer;color:#E24B4A;font-weight:700;">×</span></span>
+      <span style="display:flex;align-items:center;gap:10px;"><b>${inr(e.amount)}</b> <span onclick="expenses.splice(${i},1);renderExpenses();updateMsg();" style="cursor:pointer;color:#E24B4A;font-weight:700;">×</span></span>
     </div>`
   ).join('') : '<p style="color:#888780;font-size:13px;">No expenses added yet.</p>';
 }
@@ -495,6 +495,7 @@ function addExpense(){
     document.getElementById('expDesc').value='';
     document.getElementById('expAmount').value='';
     renderExpenses();
+    updateMsg();
   }
 }
 
@@ -503,7 +504,7 @@ function renderCouriers(){
   document.getElementById('courList').innerHTML = couriers.length ? couriers.map((c,i)=>
     `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:1px solid #DCEFEE;font-size:14px;">
       <span>${c.sender} <span style="color:#5F5E5A;">— ${c.boxes} box(es)/bag(s), ${c.company}</span></span>
-      <span onclick="couriers.splice(${i},1);renderCouriers();" style="cursor:pointer;color:#E24B4A;font-weight:700;">×</span>
+      <span onclick="couriers.splice(${i},1);renderCouriers();updateMsg();" style="cursor:pointer;color:#E24B4A;font-weight:700;">×</span>
     </div>`
   ).join('') : '<p style="color:#888780;font-size:13px;">No courier deliveries logged yet.</p>';
 }
@@ -517,6 +518,7 @@ function addCourier(){
     document.getElementById('courBoxes').value='';
     document.getElementById('courCompany').value='';
     renderCouriers();
+    updateMsg();
   }
 }
 

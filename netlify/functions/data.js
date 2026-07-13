@@ -1,7 +1,11 @@
 const { getStore } = require("@netlify/blobs");
 
 exports.handler = async (event) => {
-  const store = getStore("attendance");
+  const store = getStore({
+    name: "attendance",
+    siteID: process.env.BLOBS_SITE_ID,
+    token: process.env.BLOBS_TOKEN
+  });
   const params = event.queryStringParameters || {};
 
   try {
